@@ -1,0 +1,863 @@
+---
+title: "report"
+author: "hong jiangyi"
+date: "2024-06-27"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+
+
+
+## Data Preparation
+```{r}
+# Read data with appropriate names
+bbl_odds = read.csv("bbl_odds.csv", header=TRUE, sep = '')
+bbl_data = read.csv("bbl_dataset.csv", header=TRUE)
+
+```
+
+```{r}
+#  select right team sequence
+right_sequence=bbl_data[,c("id","team1","team2")]
+
+# merge right term and bbl_odds 
+merged_data = merge(right_sequence, bbl_odds, by = "id",all.x = TRUE)
+
+# match "id" variable according to bbl_dataset
+match_data = merged_data[match(bbl_data$id, merged_data$id), ]
+
+# Alter the term order and dbMktPrice according to "bbl_dataset"
+for (i in 1:nrow(match_data)) {
+  if (!is.na(match_data[i, 4]) && match_data[i, 2] != match_data[i, 4]) {
+      temp = match_data[i, 7]
+      match_data[i, 7] = match_data[i, 6]
+      match_data[i, 6] = temp
+    }
+}
+
+# new "bbl_odds"
+adjust_odds=match_data[,c(1,2,3,6,7)]
+
+# Harmonized column names
+colnames(adjust_odds) = c("id", "team1", "team2", "dbMktPriceTeam1", "dbMktPriceTeam2")
+```
+```{r}
+ # add dbMktPriceTeam1 and dbMktPriceTeam2 to bbl_data
+bbl_data$dbMktPriceTeam1 = NA
+bbl_data$dbMktPriceTeam2 = NA
+bbl_data$dbMktPriceTeam1 = adjust_odds$dbMktPriceTeam1
+bbl_data$dbMktPriceTeam2 = adjust_odds$dbMktPriceTeam2
+```
+
+```{r}
+head(bbl_data)
+
+
+
+# Clean data
+# find missing value in each variable
+colSums(is.na(bbl_data))
+
+# Find missing positions of row in "winner" variable
+missing_winner_positions = which(is.na(bbl_data$winner))
+bbl_data[missing_winner_positions,]
+
+# omit the case which winner is NA or Tie 
+bbl_data = subset(bbl_data, !is.na(bbl_data$winner) & bbl_data$winner != "Tie" )
+
+
+
+
+#bbl_data = bbl_data %>%
+# filter(
+#        (bbl_data$first_inning == bbl_data$team1 & (bbl_data$balls_team1 == 120 | bbl_data$wickets_team1 == #10) & bbl_data$target_team2 == bbl_data$runs_team1 + 1 & ((bbl_data$runs_team2>= bbl_data$target_team2)|
+#          ((bbl_data$balls_team2 == 120 | bbl_data$wickets_team2 == 10)))
+#           )|
+#  (bbl_data$first_inning == bbl_data$team2 & (bbl_data$balls_team2 == 120 | bbl_data$wickets_team2 == 10) & #bbl_data$target_team1 == bbl_data$runs_team2 + 1 & ((bbl_data$runs_team1>=bbl_data$target_team1)|
+#             ((bbl_data$balls_team1 == 120 | bbl_data$wickets_team1 == 10)))))
+
+
+
+
+library(dplyr)
+bbl_data = bbl_data %>%
+  filter(
+    (bbl_data$first_inning == bbl_data$team1 & (bbl_data$balls_team1 == 120 | bbl_data$wickets_team1 == 10) & bbl_data$target_team2 == bbl_data$runs_team1 + 1) |
+    (bbl_data$first_inning == bbl_data$team2 & (bbl_data$balls_team2 == 120 | bbl_data$wickets_team2 == 10) & bbl_data$target_team1 == bbl_data$runs_team2 + 1)
+  )
+```
+
+```{r}
+bbl_data$day_night = NA
+bbl_data$day_night = ifelse(bbl_data$day_night_game==0 & bbl_data$night_game== 0, 0,
+                     ifelse(bbl_data$day_night_game==1 & bbl_data$night_game== 0, 1,
+                            ifelse(bbl_data$day_night_game==0 & bbl_data$night_game== 1, 2, NA)))
+
+bbl_data$new_first_innings = NA
+bbl_data$new_winner = NA
+bbl_data$new_toss_winner = NA
+
+
+bbl_data$new_winner[as.character(bbl_data$winner)==as.character(bbl_data$team1)] = 1
+bbl_data$new_winner[as.character(bbl_data$winner) == as.character(bbl_data$team2)] = 0
+
+bbl_data$new_first_innings[as.character(bbl_data$first_innings)==as.character(bbl_data$team1)] = 1
+bbl_data$new_first_innings[as.character(bbl_data$first_innings) == as.character(bbl_data$team2)] = 0
+
+bbl_data$new_toss_winner[as.character(bbl_data$toss_winner)==as.character(bbl_data$team1)] = 1
+bbl_data$new_toss_winner[as.character(bbl_data$toss_winner) == as.character(bbl_data$team2)] = 0
+
+#bbl_data$target_team1[!is.na(bbl_data$target_team1)] = 1
+#bbl_data$target_team2[!is.na(bbl_data$target_team2)] = 1
+
+#bbl_data$target_team1[is.na(bbl_data$target_team1)] = 0
+#bbl_data$target_team2[is.na(bbl_data$target_team2)] = 0
+
+#bbl_data$new_ground = NA
+
+ground_counts = table(bbl_data$ground)
+
+# Converting categorical variables to character types
+bbl_data$ground = as.character(bbl_data$ground)
+
+# Replace categories with a frequency less than 11 with "other".
+low_freq_categories = names(ground_counts[ground_counts < 5])
+bbl_data$ground[bbl_data$ground %in% low_freq_categories] = "other"
+
+#bbl_data$new_ground = as.character(bbl_data$ground)
+#bbl_data$new_ground[bbl_data$neutral_venue==1] = "other"
+
+#print(table(bbl_data$ground))
+
+bbl_data$home= NA
+bbl_data$home[as.character(bbl_data$neutral_venue)==0] = 1
+bbl_data$home[as.character(bbl_data$neutral_venue)==1] = 0
+
+```
+
+```{r}
+
+
+
+```
+```{r}
+# sort by time
+bbl_data = bbl_data[order(bbl_data$date), ]
+
+# define new variable
+bbl_data$team1_streak = NA
+bbl_data$team2_streak = NA
+
+# Initializes the winning streak for each team
+team_streaks = setNames(rep(0, length(unique(c(bbl_data$team1, bbl_data$team2)))), 
+                         unique(c(bbl_data$team1, bbl_data$team2)))
+
+# Calculate the winning streak of the top two teams in each game
+for (i in 1:nrow(bbl_data)) {
+  # Current tournament dates and teams
+  team1 = bbl_data$team1[i]
+  team2 = bbl_data$team2[i]
+  winner = bbl_data$winner[i]
+  
+  
+  # Set the number of consecutive wins before the current match
+  bbl_data$team1_streak[i] = team_streaks[[team1]]
+  bbl_data$team2_streak[i] = team_streaks[[team2]]
+  
+  # Updating the winning streak
+  if (winner == team1) {
+    team_streaks[[team1]] = team_streaks[[team1]] + 1
+    team_streaks[[team2]] = 0
+  } else if (winner == team2) {
+    team_streaks[[team2]] = team_streaks[[team2]] + 1
+    team_streaks[[team1]] = 0
+  } else {
+    # Tie or Invalid Match Scenarios
+    team_streaks[[team1]] = 0
+    team_streaks[[team2]] = 0
+  }
+}
+bbl_data$team_streak = NA
+bbl_data$team_streak = bbl_data$team1_streak - bbl_data$team2_streak 
+
+```
+```{r}
+# Function to calculate the run rate for the last three matches
+calculate_run_rate <- function(team, date, data) {
+  # Filter matches for the given team before the given date
+  team_matches <- data[(data$team1 == team | data$team2 == team) & data$date < date, ]
+  
+  # Order matches by date
+  team_matches <- team_matches[order(team_matches$date, decreasing = TRUE), ]
+  
+  # Select the last three matches
+  last_three_matches = head(team_matches, 2)
+  
+  # Select the last three matches
+  if (nrow(team_matches) < 1) {
+    return(0)
+  }
+  # Calculate total runs and total balls
+  total_runs = 0
+  total_balls = 0
+  total_wickets = 0
+  for (i in 1:nrow(last_three_matches)) {
+    if (last_three_matches$team1[i] == team) {
+      total_runs <- total_runs + last_three_matches$runs_team1[i]
+      total_balls <- total_balls + last_three_matches$balls_team1[i]
+      total_wickets <- total_wickets + last_three_matches$wickets_team1[i]
+    } else if (last_three_matches$team2[i] == team) {
+      total_runs <- total_runs + last_three_matches$runs_team2[i]
+      total_balls <- total_balls + last_three_matches$balls_team2[i]
+      total_wickets <- total_wickets + last_three_matches$wickets_team2[i]
+    }
+  }
+  
+  # Calculate run rate
+  if (total_balls == 0) {
+    return(NA)
+  } else {
+    return(total_runs^2 / (total_balls *total_wickets))
+    #return(total_runs^2 / (total_balls*total_wickets))
+  }
+}
+
+# Add columns for the loss rates of the last three matches for both teams
+bbl_data$team1_run_rate <- NA
+bbl_data$team2_run_rate <- NA
+
+for (i in 1:nrow(bbl_data)) {
+  bbl_data$team1_run_rate[i] = calculate_run_rate(bbl_data$team1[i], bbl_data$date[i], bbl_data)
+  bbl_data$team2_run_rate[i] = calculate_run_rate(bbl_data$team2[i], bbl_data$date[i], bbl_data)
+}
+
+#m=max(bbl_data$team1_run_rate)
+#bbl_data$team1_run_rate=bbl_data$team1_run_rate/m*100
+#bbl_data$team2_run_rate=bbl_data$team2_run_rate/m*100
+min=min(c(bbl_data$team1_run_rate,bbl_data$team2_run_rate))
+max=max(c(bbl_data$team1_run_rate,bbl_data$team2_run_rate))
+bbl_data$team1_run_rate = (bbl_data$team1_run_rate-min)/(max-min)
+bbl_data$team2_run_rate = (bbl_data$team2_run_rate-min)/(max-min)
+
+bbl_data$team_run_rate <- NA
+bbl_data$team_run_rate <- bbl_data$team1_run_rate - bbl_data$team2_run_rate 
+#bbl_data$team_run_rate=bbl_data$team_run_rate/max(bbl_data$team_run_rate)*100
+# Function to calculate the loss rate for the last three matches
+calculate_loss_rate <- function(team, date, data) {
+  # Filter matches for the given team before the given date
+  team_matches <- data[(data$team1 == team | data$team2 == team) & data$date < date, ]
+  
+  # Order matches by date
+  team_matches <- team_matches[order(team_matches$date, decreasing = TRUE), ]
+  
+  # Select the last three matches
+  last_three_matches = head(team_matches, 2)
+  
+  # Select the last three matches
+  if (nrow(team_matches) < 1) {
+    return(0)
+  }
+  # Calculate total loss and total balls
+  total_loss = 0
+  total_balls = 0
+  total_runs = 0
+  for (i in 1:nrow(last_three_matches)) {
+    if (last_three_matches$team1[i] == team) {
+      total_loss <- total_loss + last_three_matches$wickets_team2[i]
+      total_balls <- total_balls + last_three_matches$balls_team2[i]
+      total_runs <- total_runs + last_three_matches$runs_team2[i]
+    } else if (last_three_matches$team2[i] == team) {
+      total_loss <- total_loss + last_three_matches$wickets_team1[i]
+      total_balls <- total_balls + last_three_matches$balls_team1[i]
+      total_runs <- total_runs + last_three_matches$runs_team1[i]
+    }
+  }
+  
+  # Calculate run rate
+  if (total_balls == 0) {
+    return(NA)
+  } else {
+    #return(3*(total_runs/total_balls) / ((1/total_loss)+(6/total_balls)+(total_balls/total_loss)))
+    return(total_runs^2 / ((total_loss+1)*(total_balls+1)))
+  }
+}
+
+# Add columns for the run rates of the last three matches for both teams
+bbl_data$team1_loss_rate <- NA
+bbl_data$team2_loss_rate <- NA
+
+for (i in 1:nrow(bbl_data)) {
+  bbl_data$team1_loss_rate[i] = calculate_loss_rate(bbl_data$team1[i], bbl_data$date[i], bbl_data)
+  bbl_data$team2_loss_rate[i] = calculate_loss_rate(bbl_data$team2[i], bbl_data$date[i], bbl_data)
+}
+
+#m=max(bbl_data$team1_loss_rate)
+#bbl_data$team1_loss_rate = bbl_data$team1_loss_rate/m*100
+#bbl_data$team2_loss_rate = bbl_data$team2_loss_rate/m*100
+
+min=min(c(bbl_data$team1_loss_rate,bbl_data$team2_loss_rate))
+max=max(c(bbl_data$team1_loss_rate,bbl_data$team2_loss_rate))
+bbl_data$team1_loss_rate = (max-bbl_data$team1_loss_rate)/(max-min)
+bbl_data$team2_loss_rate = (max-bbl_data$team2_loss_rate)/(max-min)
+
+bbl_data$team_loss_rate = NA
+bbl_data$team_loss_rate = bbl_data$team1_loss_rate -bbl_data$team2_loss_rate
+#bbl_data$team_loss_rate = bbl_data$team_loss_rate/max(bbl_data$team_loss_rate)*100
+```
+
+```{r}
+
+# Sort by date
+bbl_data = bbl_data[order(bbl_data$date), ]
+
+# Defining new variables
+bbl_data$team1_recent_wins = NA
+bbl_data$team2_recent_wins = NA
+
+# Calculate the number of wins in the last five games for the top two teams in each game
+for (i in 1:nrow(bbl_data)) {
+  # Current tournament dates and teams
+  current_date = bbl_data$date[i]
+  team1 = bbl_data$team1[i]
+  team2 = bbl_data$team2[i]
+  
+  # Find the five games prior to the current game
+  past_matches = bbl_data[bbl_data$date < current_date, ]
+  
+  # Counting team1's last five game wins
+  team1_matches = past_matches[past_matches$team1 == team1 | past_matches$team2 == team1, ]
+  if (nrow(team1_matches) > 5) {
+    team1_matches <- tail(team1_matches, 5)
+  }
+  team1_wins <- sum(team1_matches$winner == team1, na.rm = TRUE)
+  bbl_data$team1_recent_wins[i] <- team1_wins
+  
+  # Counting team2's last five game wins
+  team2_matches <- past_matches[past_matches$team1 == team2 | past_matches$team2 == team2, ]
+  if (nrow(team2_matches) > 5) {
+    team2_matches <- tail(team2_matches, 5)
+  }
+  team2_wins <- sum(team2_matches$winner == team2, na.rm = TRUE)
+  bbl_data$team2_recent_wins[i] = team2_wins
+}
+
+bbl_data$team_recent_wins = NA
+bbl_data$team_recent_wins = bbl_data$team1_recent_wins-bbl_data$team2_recent_wins
+
+```
+```{r}
+# Create a function to calculate each team's win percentage before each game
+calculate_win_rate <- function(team, date, df) {
+  # Filter out the games before this one
+  past_matches <- df[(df$team1 == team | df$team2 == team) & df$date < date, ]
+  
+  # Counting the number of win
+  wins <- nrow(past_matches[past_matches$winner == team, ])
+  
+  # Calculate the total number of games
+  total_matches <- nrow(past_matches)
+  
+  # Calculating Winning Percentage
+  if (total_matches == 0) {
+    return(0)
+  } else {
+    return(wins / total_matches)
+  }
+}
+
+# Initialize new columns to store each team's pre-game win percentage
+bbl_data$team1_win_rate = NA
+bbl_data$team2_win_rate = NA
+
+# Calculate the winning percentage before each game
+for (i in 1:nrow(bbl_data)) {
+  bbl_data$team1_win_rate[i] = calculate_win_rate(bbl_data$team1[i], bbl_data$date[i], bbl_data)
+  bbl_data$team2_win_rate[i] = calculate_win_rate(bbl_data$team2[i], bbl_data$date[i], bbl_data)
+}
+
+bbl_data$team_win_rate = NA
+bbl_data$team_win_rate = bbl_data$team1_win_rate-bbl_data$team2_win_rate
+
+```
+
+```{r}
+# converting categorical variables to factors
+
+bbl_data$id=as.factor(bbl_data$id)
+
+bbl_data$season=as.factor(bbl_data$season)
+bbl_data$ground=as.factor(bbl_data$ground)
+bbl_data$timezone=as.factor(bbl_data$timezone)
+
+bbl_data$team1=as.factor(bbl_data$team1)
+bbl_data$team2=as.factor(bbl_data$team2)
+bbl_data$neutral_venue=as.factor(bbl_data$neutral_venue)
+
+bbl_data$day_night_game=as.factor(bbl_data$day_night_game)
+bbl_data$night_game=as.factor(bbl_data$night_game)
+
+bbl_data$target_team1 = as.factor(bbl_data$target_team1)
+bbl_data$target_team2 = as.factor(bbl_data$target_team2)
+
+bbl_data$first_innings=as.factor(bbl_data$first_innings)
+bbl_data$winner=as.factor(bbl_data$winner)
+bbl_data$toss_winner=as.factor(bbl_data$toss_winner)
+
+bbl_data$day_night = as.factor(bbl_data$day_night)
+
+bbl_data$new_first_innings = as.factor(bbl_data$new_first_innings)
+bbl_data$new_winner = as.factor(bbl_data$new_winner)
+bbl_data$new_toss_winner = as.factor(bbl_data$new_toss_winner)
+
+#bbl_data$score_team1 = scale(bbl_data$score_team1)
+#bbl_data$score_team2 = scale(bbl_data$score_team2)
+
+#bbl_data$team1_streak = scale(bbl_data$team1_streak)
+#bbl_data$team2_streak = scale(bbl_data$team2_streak)
+
+#bbl_data$team1_recent_wins = scale(bbl_data$team1_recent_wins)
+#bbl_data$team2_recent_wins = scale(bbl_data$team2_recent_wins)
+#bbl_data$team_recent_wins = scale(bbl_data$team_recent_wins)
+
+#bbl_data$team1_run_rate =scale(bbl_data$team1_run_rate)
+#bbl_data$team2_run_rate =scale(bbl_data$team2_run_rate)
+bbl_data$team_run_rate =scale(bbl_data$team_run_rate)
+
+#bbl_data$team1_loss_rate =scale(bbl_data$team1_loss_rate)
+#bbl_data$team2_loss_rate =scale(bbl_data$team2_loss_rate)
+bbl_data$team_loss_rate =scale(bbl_data$team_loss_rate)
+#bbl_data$avg_team1 = scale(bbl_data$avg_team1)
+#bbl_data$avg_team2 = scale(bbl_data$avg_team2)
+
+#bbl_data$opponent_avg_team1 = scale(bbl_data$opponent_avg_team1)
+#bbl_data$opponent_avg_team2 = scale(bbl_data$opponent_avg_team2)
+
+#bbl_data$team1_win_rate = scale(bbl_data$team1_win_rate)
+#bbl_data$team2_win_rate = scale(bbl_data$team2_win_rate)
+
+bbl_data$home = as.factor(bbl_data$home)
+
+#bbl_data$avg_wicket_team = scale(bbl_data$avg_wicket_team)
+#bbl_data$team_streak = scale(bbl_data$team_streak)
+#bbl_data$avg_team = scale(bbl_data$avg_team)
+#bbl_data$team_recent_wins = scale(bbl_data$team_recent_wins)
+#bbl_data$team_win_rate = scale(bbl_data$team_win_rate)
+
+bbl_data$altitude = scale(bbl_data$altitude)
+bbl_data$latitude = scale(bbl_data$latitude)
+bbl_data$longitude = scale(bbl_data$longitude)
+#bbl_data$new_ground = factor(bbl_data$new_ground)
+###Basic statistics of variables in the bbl data
+# number of rows and columns
+num_of_row = nrow(bbl_data)
+num_of_col = ncol(bbl_data)
+
+# team_list and season_list
+team_list = unique(bbl_data$team1)
+season_list = unique(bbl_data$season)
+
+# View the structure of the bbl_data
+str(bbl_data)
+
+# Get a summary of the bbl_data
+summary(bbl_data)
+```
+
+```{r}
+bbl_data$market = NA
+bbl_data$market = ifelse(bbl_data$dbMktPriceTeam1<bbl_data$dbMktPriceTeam2,1,0)
+bbl_data$market[490:544]
+run_rate= c(bbl_data$team1_run_rate,bbl_data$team2_run_rate)
+loss_rate = c(bbl_data$team1_loss_rate,bbl_data$team2_loss_rate)
+w1=sqrt(var(run_rate))/(sqrt(var(run_rate))+sqrt(var(loss_rate)))
+w2=sqrt(var(loss_rate))/(sqrt(var(run_rate))+sqrt(var(loss_rate)))
+
+
+```
+
+```{r}
+#bbl = subset(bbl_data, select= c("team1","team2","home","timezone","day_night","ground","new_first_innings","new_winner","new_toss_winner","team1_streak","team2_streak","team1_recent_wins","team2_recent_wins","avg_team1","avg_team2","latitude","longitude","altitude","opponent_avg_team1","opponent_avg_team2","team1_win_rate","team2_win_rate"))
+bbl = subset(bbl_data, select= c("team1","home","day_night","new_first_innings","new_winner","ground","team1_run_rate","team2_run_rate","team1_loss_rate","team2_loss_rate","team1_recent_wins","team2_recent_wins","team_run_rate","team_loss_rate","team_recent_wins"))
+bbl_data$team1_strength = NA
+bbl_data$team1_strength = w1*bbl_data$team1_run_rate +w2*bbl_data$team1_loss_rate
+
+bbl_data$team2_strength = NA
+bbl_data$team2_strength = w1*bbl_data$team2_run_rate+w2* bbl_data$team2_loss_rate
+weight=ifelse(bbl_data$team1_strength> bbl_data$team2_strength,1,0)
+bbl_data$team_strength = NA
+bbl_data$team_strength = bbl_data$team1_strength/bbl_data$team2_strength 
+
+bbl_data$victory_margin=NA
+bbl_data$victory_margin = bbl_data$team1_run_rate+bbl_data$team1_loss_rate-bbl_data$team2_loss_rate-bbl_data$team2_run_rate
+bbl_data$victory_margin =bbl_data$victory_margin*150
+bbl = subset(bbl_data, select= c("new_winner","team1_run_rate","team2_run_rate","team1_loss_rate","team2_loss_rate","team1_streak","team2_streak"))
+
+bbl = subset(bbl_data, select= c("new_winner","new_toss_winner","new_first_innings","day_night","home","team1_elo","team2_elo"))
+
+bbl = subset(bbl_data, select= c("new_winner","team1_elo","team2_elo","team1_run_rate","team2_run_rate","team1_loss_rate","team2_loss_rate"))
+
+bbl = subset(bbl_data, select= c("day_night","new_toss_winner","new_winner","new_first_innings","home"))
+```
+
+```{r}
+#bbl=bbl[10:,]
+# Splitting the data into two parts
+n = length(bbl$new_winner)
+
+training_validation_data = bbl[1:(0.90*n),] #data for training set
+testing_data = bbl[-(1:(0.90*n)),] #data for prediction set
+#set.seed(9)
+#index=sample(1:nrow(bbl), 0.9*nrow(bbl))
+#training_validation_data = bbl[index, ]
+#testing_data= bbl[-index, ]
+
+#training_validation_data = bbl[1:(0.9*n),] #data for training and validation
+#testing_data = bbl[-(1:(0.9*n)),] #data for prediction set
+
+library(randomForest)
+model = randomForest(new_winner ~ ., data = training_validation_data, importance = TRUE)
+
+importance(model)
+
+varImpPlot(model)
+
+
+#boston_importance <- xgb.importance(feature_names = names(bbl[, -14]), model = boston_xgb_opt)
+#boston_importance
+#xgb.plot.importance(boston_importance)
+```
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+library(caret)
+createExpandingSlices <- function(data_length, initialWindow, horizon) {
+  train_slices <- list()
+  test_slices <- list()
+  
+  for (i in seq(initialWindow, data_length - horizon)) {
+    train_slices[[length(train_slices) + 1]] <- seq(1, i)
+    test_slices[[length(test_slices) + 1]] <- seq(i + 1, i + horizon)
+  }
+  
+  return(list(train = train_slices, test = test_slices))
+}
+
+# Assuming bbl is your dataset and it has enough rows for the slicing
+timeslices <- createExpandingSlices(nrow(training_validation_data), initialWindow = 482, horizon = 20)
+
+# Setting training control parameters
+trainControl <- trainControl(
+  method = "timeslice",             # Using Time Series Slicing
+  initialWindow = 482,              # Initial training set window size
+  horizon = 20,                     # Test Set Window Size
+  fixedWindow = FALSE,              # Expanding training set window
+  savePredictions = "final",        # Save the final prediction
+  classProbs = TRUE,                # Calculating category probabilities for classification problems
+  summaryFunction = twoClassSummary, # Functions for evaluating the performance of classification models
+  index = timeslices$train,         # Training set index
+  indexOut = timeslices$test        # Test Set Index
+)
+
+# Setting the RFE control parameters
+control <- rfeControl(
+  functions = rfFuncs,              # Using Random Forest as a model
+  method = "cv",                    # Using cross-validation
+  index = timeslices$train,         # Training set index
+  indexOut = timeslices$test        # Test Set Index
+)
+
+# Perform recursive feature elimination
+results <- rfe(
+  training_validation_data[, -6],                        # feature
+  training_validation_data$new_winner,                   # target variable
+  sizes = c(3:10),                  # different numbers of features
+  rfeControl = control              # Control parameters for RFE
+)
+
+# Print results
+print(results)
+
+```
+```{r}
+
+evaluate_window = function(window_size, data) {
+    accuracies = c()
+    for (i in (window_size):(nrow(bbl)-1)) {
+        train_data <- bbl[(i-window_size+1):i, ]
+        model <- glm(new_winner ~ ., data = train_data, family=binomial(link="logit"))
+        test_data <- bbl[i+1, ]
+        prediction <- predict(model, newdata = test_data, type = "response")
+        prediction = ifelse(prediction >= 0.5,1,0)
+        accuracies <- c(accuracies, prediction == test_data$new_winner)
+    }
+    return(mean(accuracies))
+}
+
+window_sizes <- 300:450
+results = sapply(window_sizes, evaluate_window, data = bbl)
+print(results)
+
+best_window_size <- window_sizes[which.max(results)]
+```
+
+## Exploratory data analysis
+
+```{r, out.width="75%", out.height="75%", fig.align='center'}
+Total_game = table(bbl_data$team1)+table(bbl_data$team2)
+
+bbl_data$winner = as.character(bbl_data$winner)
+win_counts = table(bbl_data$winner)
+lost_counts = Total_game - win_counts
+
+results_matrix = rbind(win_counts, lost_counts)
+
+
+win_per = win_counts/Total_game
+lost_per = lost_counts/Total_game
+
+bar_positions = barplot(results_matrix, 
+                        beside = FALSE, 
+                        col = c( "pink", "lightblue"), 
+                        #names.arg = team_list,
+                        names.arg = c("Adelaide\nStrikers","Brisbane\nHeat ","Hobart\nHurricanes",
+                                      "Melbourne\nRenegades","Melbourne\nStars","Perth\nScorchers",
+                                      "Sydney\nSixers","Sydney\nThunder"),
+                        #names.arg = c("Adelaide\na","Brisbane","Hobart","Renegades","Stars","Perth","Sixers","Thunder"),
+                        legend = c("Wins", "Losses" ),
+                        main = "BBL Teams' Total Matches and Win-Loss Record", 
+                        xlab = "BBL Teams", 
+                        ylab = "Total Matches Played",
+                        args.legend = list(x = "bottomright", inset = c(0, 0.01), cex = 0.7),
+                        cex.names = 0.72,
+                        ylim = c(0,155))
+
+column_sums = colSums(results_matrix)
+
+# add percent percentage
+cum_heights = apply(results_matrix, 2, cumsum)  # Cumulative height
+
+# Loop through each category and component
+for (i in 1:ncol(results_matrix)) {
+  for (j in 1:nrow(results_matrix)) {
+    # Calculate the percentage of each component
+    part_percentage = round((results_matrix[j, i] / column_sums[i]) * 100, 1) 
+    
+    # Calculate the exact location of each label
+    label_y_position = if (j == 1) {
+      results_matrix[j, i] / 2
+    } else {
+      cum_heights[j - 1, i] + results_matrix[j, i] / 2
+    }
+    # add lable
+    text(bar_positions[i], label_y_position, labels = paste(part_percentage, "%", sep=""), cex = 0.8)
+  }
+}
+text(x = bar_positions, y = colSums(results_matrix) + 5, 
+     labels = colSums(results_matrix))
+bbl_data$winner = as.factor(bbl_data$winner)
+```
+```{r}
+
+```
+```{r}
+#chisq.test
+chi_test_result <- chisq.test(table(bbl_data$day_night, bbl_data$new_winner))
+print(chi_test_result)
+library(vcd)
+# Cramér's V
+cramers_v_result <- assocstats(table(bbl_data$day_night, bbl_data$new_winner))
+print(cramers_v_result)
+cramers_v_matrix <- matrix(c(
+  1.00, 0.214, 0.036, 0.044, 0.1,
+  0.214, 1.00, 0.005, 0.057, 0.089,
+  0.036, 0.005, 1.00, 0.103, 0.022,
+  0.044, 0.057, 0.103, 1.00, 0.007,
+  0.1, 0.089, 0.022, 0.007, 1.00
+), nrow = 5, byrow = TRUE)
+
+
+rownames(cramers_v_matrix) <- colnames(cramers_v_matrix) <- c("home advantage", "match start time", "toss winner", "first innings team", "winner")
+library(reshape2)
+
+cramers_v_df <- melt(cramers_v_matrix, varnames = c("Variable1", "Variable2"), value.name = "CramersV")
+
+ggplot(cramers_v_df, aes(Variable1, Variable2, fill = CramersV)) +
+  geom_tile(color = "black") +
+  scale_fill_gradient2(low = "white", high = "red", mid = "orange", 
+                       midpoint = 0.5, limit = c(0,1), space = "Lab", 
+                       name="Cramér's V") +
+  geom_text(aes(label = round(CramersV, 3)), color = "black", size = 4) +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 12, hjust = 1)) +
+  coord_fixed() +
+  labs(title = "Heatmap of Cramér's V between Categorical Variables",
+       x = "Variable 1",
+       y = "Variable 2")
+```
+
+```{r}
+cor_data = bbl_data[,]
+cor_mat = cor(bbl[sapply(bbl, is.numeric)])
+cor_matrix <- cor(bbl[sapply(bbl, is.numeric)])
+colnames(bbl) <- c("winner", "home_BP", "away_BP", "home_OP","away_OP")
+
+melted_cor_matrix <- melt(cor_matrix)
+
+# use ggplot2
+ggplot(data = melted_cor_matrix, aes(x=Var1, y=Var2, fill=value)) +
+  geom_tile(color = "black") +
+  scale_fill_gradient2(low = "blue", high = "yellow", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab", 
+                       name="Correlation") +
+  geom_text(aes(label = round(value, 2)), color = "black", size = 4) + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 0, vjust = 4, 
+                                   size = 10, hjust = 0.5),
+  plot.title = element_text(hjust = 0.5)) +  
+  coord_fixed() +
+  labs(title = "Correlation of Strength Variables", x = "Variables", y = "Variables")
+```
+```{r}
+model = randomForest(training_data$new_winner ~ ., data = training_data, importance = TRUE)
+
+importance(model)
+```
+
+```{r}
+
+
+```
+```{r}
+
+#baseline model
+# count the number of winner
+winner_counts = sort(table(as.character(training_data$winner)), decreasing = TRUE)
+print(winner_counts)
+
+most_frequent_winner = NA
+# Finding the most frequent winners
+for(i in 1: nrow(testing_data)){
+  team1 = as.character(testing_data$team1[i])
+  team2 = as.character(testing_data$team2[i])
+most_frequent_winner[i] = ifelse(winner_counts[team1] > winner_counts[team2], team1, team2)
+}
+
+accuracy_baseline =  mean(most_frequent_winner == testing_data$winner)
+
+
+```
+
+```{r}
+
+# first glm (home)
+model_glm1 = glm(new_winner~ home,family=binomial(link="logit"),data=training_validation_data)
+pred_glm = predict(model_glm1, newdata = testing_data, type = "response")
+brier_score =  mean((as.numeric(pred_glm) - (as.numeric(testing_data$new_winner)-1))^2)#0.247
+pred_glm = ifelse(pred_glm >= 0.5,1,0)#0.582
+sum(pred_glm==testing_data$new_winner)
+
+
+model_glm = glm(new_winner~ .,family=binomial(link="logit"),data=training_validation_data)
+#model_glm = glm(new_winner~ home,family=binomial(link="logit"),data=training_validation_data)
+pred_glm = predict(model_glm, newdata = testing_data, type = "response")
+pred_glm = ifelse(pred_glm >= 0.5,1,0)#0.534
+
+brier_score =  mean((as.numeric(pred_glm) - (as.numeric(testing_data$new_winner)-1))^2)#0.345
+sum(pred_glm==testing_data$new_winner)
+
+null_model <- glm(new_winner~ 1,family=binomial(link="logit"),data=training_validation_data)
+
+# full model
+full_model <- glm(new_winner~ .+ (.)^2 ,family=binomial(link="logit"),data=training_validation_data)
+
+# use step
+stepwise_model <- step(null_model, scope = list(lower = null_model, upper = full_model), direction = "both")
+pred_step_glm = predict(stepwise_model, newdata = testing_data, type = "response")
+pred_step_glm = ifelse(pred_step_glm >= 0.5,1,0)#0.527
+brier_score =  mean((as.numeric(pred_step_glm) - (as.numeric(testing_data$new_winner)-1))^2)#0.473
+sum(pred_step_glm==testing_data$new_winner)
+library(rpart)
+model_tree = rpart(new_winner~.,data=training_validation_data,method="class",cp=0.01)
+plot(model_tree ,uniform = T,margin=0.01,branch=0.5)
+text(model_tree)
+#pfit=prune(model_tree,cp=model_tree$cptable[which.min(model_tree$cptable[,"xerror"]),"CP"])
+#plot(pfit,uniform=T,margin=0.01,branch=0.5)
+#text(pfit,cex=0.8)
+
+pred_tree = predict(pfit, newdata=testing_data,type='class')
+sum(pred_tree ==testing_data$new_winner)
+
+pred_tree = predict(pfit, newdata=testing_data,type='prob')
+brier_score <- mean(((as.numeric(testing_data$new_winner)-1)- pred_tree[,2])^2)
+#library(tree)
+#model_tree = tree(new_winner~.,data=training_validation_data)
+
+#pred_tree = predict(model_tree,newdata= testing_data ,type="class")
+
+#x=training_validation_data[,-5]
+#y=training_validation_data[,5]
+#lasso_model <- cv.glmnet(x, y, alpha = 0, family = "binomial")
+#print(lasso_model)
+#step_glm = step(model_glm,direction = "both",data=training_validation_data)
+#
+#
+
+
+```
+```{r}
+model_knn =knn(training_validation_data[,-1], testing_data[,-1], training_validation_data[,1],k = 17,prob=F)
+sum(model_knn==testing_data$new_winner)
+
+
+knn_predictions = knn(training_validation_data[,-1], testing_data[,-1], training_validation_data[,1],k = 17,prob=T)
+predicted_probabilities <- attr(knn_predictions, "prob")
+
+
+predicted_probabilities <- ifelse(knn_predictions == 0, 1 - predicted_probabilities, predicted_probabilities)
+library(class)
+library(Metrics)
+brier_score <- mean(((as.numeric(testing_data$new_winner)-1)- predicted_probabilities)^2)
+print(brier_score)
+```
+
+```{r}
+library(e1071)
+library(class)
+model_nb = naiveBayes(new_winner~ .,data = training_validation_data)#0.62
+pred_nb = predict(model_nb, newdata=testing_data)
+sum(pred_nb==testing_data$new_winner)
+pred_nb = predict(model_nb, testing_data,type="raw")
+brier_score <- mean(((as.numeric(testing_data$new_winner)-1)- pred_nb[,2])^2)
+
+
+model_rf = randomForest(new_winner~. ,data=training_validation_data)
+pred_rf = predict(model_rf,newdata=testing_data)
+sum(pred_rf==testing_data$new_winner)
+pred_rf = predict(model_rf,newdata=testing_data,type="prob")
+
+brier_score <- mean(((as.numeric(testing_data$new_winner)-1)- pred_rf[,2])^2)
+
+model_svm = svm(new_winner~. ,data=training_validation_data,type="C",cost=1.2,gamma=0.2,probability = TRUE)
+pred_svm = predict(model_svm,newdata= testing_data)
+sum(pred_svm==testing_data$new_winner)
+pred_svm = predict(model_svm,newdata= testing_data, probability = TRUE)
+probs <- attr(pred_svm, "probabilities")
+probs=as.matrix(probs)
+brier_score <- mean(((as.numeric(testing_data$new_winner)-1)- probs[,1])^2)
+
+
+```
+
